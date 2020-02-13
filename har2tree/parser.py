@@ -17,7 +17,6 @@ import hashlib
 from operator import itemgetter
 from typing import List, Dict, Optional, Union, Tuple
 import ipaddress
-import sys
 
 from ete3 import TreeNode  # type: ignore
 from bs4 import BeautifulSoup  # type: ignore
@@ -253,14 +252,7 @@ class URLNode(HarTreeNode):
         # So we need an alternative URL to do a lookup against
         self.add_feature('alternative_url_for_referer', self.name.split('#')[0])
 
-        # Instant the request is made
-        if sys.version_info >= (3, 7):
-            if har_entry['startedDateTime'][-1] == 'Z':
-                har_entry['startedDateTime'] = har_entry['startedDateTime'].replace('Z', '+00:00')
-            self.add_feature('start_time', datetime.fromisoformat(har_entry['startedDateTime']))
-        else:
-            self.add_feature('start_time', datetime.strptime(har_entry['startedDateTime'], '%Y-%m-%dT%H:%M:%S.%f%z'))
-
+        self.add_feature('start_time', datetime.strptime(har_entry['startedDateTime'], '%Y-%m-%dT%X.%fZ'))  # Instant the request is made
         self.add_feature('time', timedelta(milliseconds=har_entry['time']))
         self.add_feature('time_content_received', self.start_time + self.time)  # Instant the response is fully received (and the processing of the content by the browser can start)
         self.add_feature('hostname', urlparse(self.name).hostname)
@@ -306,7 +298,9 @@ class URLNode(HarTreeNode):
             self.add_feature('cookies_sent', {})
             for cookie in self.request_cookie:
                 self.cookies_sent[f'{cookie["name"]}={cookie["value"]}'] = []
-
+        if not 'mimeType' in har_entry['response']['content']:
+            # mimeType isn't mandatory, quick fix if the key isn't here set the value to an empty string
+            har_entry['response']['content']['mimeType'] = ''
         if not har_entry['response']['content'].get('text') or har_entry['response']['content']['text'] == '':
             self.add_feature('empty_response', True)
         else:
@@ -323,34 +317,35 @@ class URLNode(HarTreeNode):
                 self.add_feature('filename', filename)
             else:
                 self.add_feature('filename', 'file.bin')
-
-        if ('javascript' in har_entry['response']['content']['mimeType']
-                or 'ecmascript' in har_entry['response']['content']['mimeType']):
-            self.add_feature('js', True)
-        elif har_entry['response']['content']['mimeType'].startswith('image'):
-            self.add_feature('image', True)
-        elif har_entry['response']['content']['mimeType'].startswith('text/css'):
-            self.add_feature('css', True)
-        elif 'json' in har_entry['response']['content']['mimeType']:
-            self.add_feature('json', True)
-        elif har_entry['response']['content']['mimeType'].startswith('text/html'):
-            self.add_feature('html', True)
-        elif 'font' in har_entry['response']['content']['mimeType']:
-            self.add_feature('font', True)
-        elif 'octet-stream' in har_entry['response']['content']['mimeType']:
-            self.add_feature('octet_stream', True)
-        elif ('text/plain' in har_entry['response']['content']['mimeType']
-                or 'xml' in har_entry['response']['content']['mimeType']):
-            self.add_feature('text', True)
-        elif 'video' in har_entry['response']['content']['mimeType']:
-            self.add_feature('video', True)
-        elif 'mpegurl' in har_entry['response']['content']['mimeType'].lower():
-            self.add_feature('livestream', True)
-        elif not har_entry['response']['content']['mimeType']:
+                
+        if '' in har_entry['response']['content']['mimeType']:
             self.add_feature('unset_mimetype', True)
-        else:
-            self.add_feature('unknown_mimetype', True)
-            logging.warning('Unknown mimetype: {}'.format(har_entry['response']['content']['mimeType']))
+        else :
+            if ('javascript' in har_entry['response']['content']['mimeType']
+                    or 'ecmascript' in har_entry['response']['content']['mimeType']):
+                self.add_feature('js', True)
+            elif har_entry['response']['content']['mimeType'].startswith('image'):
+                self.add_feature('image', True)
+            elif har_entry['response']['content']['mimeType'].startswith('text/css'):
+                self.add_feature('css', True)
+            elif 'json' in har_entry['response']['content']['mimeType']:
+                self.add_feature('json', True)
+            elif har_entry['response']['content']['mimeType'].startswith('text/html'):
+                self.add_feature('html', True)
+            elif 'font' in har_entry['response']['content']['mimeType']:
+                self.add_feature('font', True)
+            elif 'octet-stream' in har_entry['response']['content']['mimeType']:
+                self.add_feature('octet_stream', True)
+            elif ('text/plain' in har_entry['response']['content']['mimeType']
+                    or 'xml' in har_entry['response']['content']['mimeType']):
+                self.add_feature('text', True)
+            elif 'video' in har_entry['response']['content']['mimeType']:
+                self.add_feature('video', True)
+            elif 'mpegurl' in har_entry['response']['content']['mimeType'].lower():
+                self.add_feature('livestream', True)
+            else:
+                self.add_feature('unknown_mimetype', True)
+                logging.warning('Unknown mimetype: {}'.format(har_entry['response']['content']['mimeType']))
 
         # NOTE: Chrome/Chromium only features
         if har_entry.get('serverIPAddress'):
@@ -582,9 +577,9 @@ class Har2Tree(object):
             if f'{c["name"]}={c["value"]}' not in self.cookies_received:
                 locally_created[f'{c["name"]}={c["value"]}'] = c
 
-        # if locally_created:
-        #    for l in locally_created.values():
-        #        print(json.dumps(l, indent=2))
+        if locally_created:
+            for l in locally_created.values():
+                print(json.dumps(l, indent=2))
 
         for n in self.nodes_list:
             if hasattr(n, 'cookies_sent'):
