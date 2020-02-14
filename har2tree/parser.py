@@ -318,7 +318,7 @@ class URLNode(HarTreeNode):
             else:
                 self.add_feature('filename', 'file.bin')
                 
-        if '' in har_entry['response']['content']['mimeType']:
+        if '' == har_entry['response']['content']['mimeType']:
             self.add_feature('unset_mimetype', True)
         else :
             if ('javascript' in har_entry['response']['content']['mimeType']
